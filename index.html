@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Поезда</title>
+<style>
+  :root {
+    /* ===== Размеры шрифтов — правь тут ===== */
+    --fs-row1: 13vmin;        /* счётчик ближайшего (1-го) поезда */
+    --fs-row23: 5.85vmin;     /* счётчик 2-й и 3-й строк (~45% от --fs-row1) */
+    --fs-time: 2vmin;         /* время отправления в левой колонке (≈16px при окне ~1280×800), одинаково для всех строк */
+    --color-time: #DFDFDF;    /* цвет времени отправления в левой колонке */
+    --unit-scale: 0.5;        /* во сколько раз буквы "ч"/"м" меньше цифр */
+    --row1-h: 17vmin;         /* фиксированная высота 1-й строки-слота */
+    --row23-h: 9vmin;         /* фиксированная высота 2-й и 3-й строк-слотов */
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: #000;
+    color: #fff;
+  }
+
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+  }
+
+  .board {
+    display: grid;
+    grid-template-columns: max-content max-content;
+    grid-template-rows: var(--row1-h) var(--row23-h) var(--row23-h);
+    column-gap: 3vmin;
+    align-items: baseline; /* время и счётчик каждой строки стоят на одной базовой линии */
+    justify-items: start;
+    font-family: ui-monospace, "Finlandica", "SF Mono", "JetBrains Mono", "Roboto Mono", Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+
+  .dep-time {
+    font-size: var(--fs-time);
+    color: var(--color-time);
+    white-space: nowrap;
+  }
+
+  .count {
+    display: flex;
+    align-items: baseline;
+    white-space: nowrap;
+    gap: 0.32em; /* зазор между "Nч" и минутами; исчезает сам, когда часов нет (display:none) */
+  }
+
+  .row1 .dep-time,
+  .row1 .count { font-size: var(--fs-row1); }
+  .row1 .dep-time { font-size: var(--fs-time); }
+
+  .row23 .dep-time,
+  .row23 .count { font-size: var(--fs-row23); }
+  .row23 .dep-time { font-size: var(--fs-time); }
+
+  /* слот часов: если часов нет — убираем его из потока (display:none),
+     и минуты сдвигаются на его место. Это единственное намеренное исключение
+     из правила «ничего не прыгает» — так требует дизайн. */
+  .hrs {
+    display: inline-block;
+  }
+
+  .mins {
+    display: inline-block;
+  }
+
+  .unit {
+    font-size: calc(1em * var(--unit-scale));
+  }
+</style>
+</head>
+<body>
+
+  <div class="board">
+    <div class="row1">
+      <div class="dep-time" id="time-0"></div>
+    </div>
+    <div class="row1">
+      <div class="count" id="count-0">
+        <span class="hrs" id="hrs-0"></span><span class="mins" id="mins-0"></span>
+      </div>
+    </div>
+
+    <div class="row23">
+      <div class="dep-time" id="time-1"></div>
+    </div>
+    <div class="row23">
+      <div class="count" id="count-1">
+        <span class="hrs" id="hrs-1"></span><span class="mins" id="mins-1"></span>
+      </div>
+    </div>
+
+    <div class="row23">
+      <div class="dep-time" id="time-2"></div>
+    </div>
+    <div class="row23">
+      <div class="count" id="count-2">
+        <span class="hrs" id="hrs-2"></span><span class="mins" id="mins-2"></span>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // ===== Расписание отправлений из Риги (направление Тукумс) — правь тут =====
+  // days: "all" | "weekday" (пн–пт) | "weekend" (сб–вс)
+  const SCHEDULE = [
+    { t: "05:15", days: "all" },
+    { t: "05:30", days: "all" },
+    { t: "06:00", days: "all" },
+    { t: "06:30", days: "all" },
+    { t: "06:45", days: "all" },
+    { t: "07:00", days: "all" },
+    { t: "07:23", days: "all" },
+    { t: "07:30", days: "all" },
+    { t: "07:45", days: "all" },
+    { t: "08:00", days: "all" },
+    { t: "08:15", days: "all" },
+    { t: "08:30", days: "all" },
+    { t: "09:00", days: "all" },
+    { t: "09:30", days: "all" },
+    { t: "10:00", days: "all" },
+    { t: "10:15", days: "all" },
+    { t: "10:30", days: "all" },
+    { t: "10:50", days: "all" },
+    { t: "11:00", days: "all" },
+    { t: "11:15", days: "all" },
+    { t: "11:30", days: "all" },
+    { t: "11:45", days: "all" },
+    { t: "12:00", days: "all" },
+    { t: "12:15", days: "all" },
+    { t: "12:30", days: "all" },
+    { t: "12:50", days: "all" },
+    { t: "13:00", days: "all" },
+    { t: "13:20", days: "all" },
+    { t: "13:30", days: "all" },
+    { t: "13:45", days: "all" },
+    { t: "14:00", days: "all" },
+    { t: "14:15", days: "all" },
+    { t: "14:30", days: "all" },
+    { t: "14:50", days: "all" },
+    { t: "15:00", days: "all" },
+    { t: "15:15", days: "all" },
+    { t: "15:30", days: "all" },
+    { t: "15:45", days: "all" },
+    { t: "16:00", days: "all" },
+    { t: "16:15", days: "all" },
+    { t: "16:30", days: "all" },
+    { t: "16:45", days: "all" },
+    { t: "17:00", days: "all" },
+    { t: "17:15", days: "all" },
+    { t: "17:30", days: "all" },
+    { t: "17:45", days: "all" },
+    { t: "18:00", days: "all" },
+    { t: "18:15", days: "all" },
+    { t: "18:30", days: "all" },
+    { t: "18:45", days: "all" },
+    { t: "19:00", days: "all" },
+    { t: "19:15", days: "all" },
+    { t: "19:30", days: "all" },
+    { t: "19:45", days: "all" },
+    { t: "20:00", days: "all" },
+    { t: "20:30", days: "all" },
+    { t: "21:00", days: "all" },
+    { t: "21:30", days: "all" },
+    { t: "22:00", days: "all" },
+    { t: "22:15", days: "all" },
+    { t: "22:30", days: "all" },
+    { t: "23:00", days: "all" },
+    { t: "23:45", days: "all" },
+  ];
+
+  // ---- Отладка: ?now=HH:MM (или HH:MM:SS) подменяет текущее время; дальше оно тикает само ----
+  let overrideBase = null;
+  let overrideStart = null;
+  (function initOverride() {
+    const params = new URLSearchParams(location.search);
+    const nowParam = params.get("now");
+    if (!nowParam) return;
+    const parts = nowParam.split(":").map(Number);
+    const base = new Date();
+    base.setHours(parts[0] || 0, parts[1] || 0, parts[2] || 0, 0);
+    overrideBase = base.getTime();
+    overrideStart = Date.now();
+  })();
+
+  function getNow() {
+    if (overrideBase !== null) {
+      return new Date(overrideBase + (Date.now() - overrideStart));
+    }
+    return new Date();
+  }
+
+  function dayType(date) {
+    const d = date.getDay(); // 0 = вс, 6 = сб
+    return (d === 0 || d === 6) ? "weekend" : "weekday";
+  }
+
+  function parseHM(str) {
+    const [h, m] = str.split(":").map(Number);
+    return { h, m };
+  }
+
+  // ближайшие (до трёх) отправления сегодня, строго в пределах текущих суток
+  function upcomingTrains(now) {
+    const today = dayType(now);
+    const result = [];
+    for (const entry of SCHEDULE) {
+      if (entry.days !== "all" && entry.days !== today) continue;
+      const { h, m } = parseHM(entry.t);
+      const dep = new Date(now);
+      dep.setHours(h, m, 0, 0);
+      const diffSeconds = Math.floor((dep - now) / 1000);
+      if (diffSeconds < 0) continue;
+      result.push({ t: entry.t, remainMin: Math.floor(diffSeconds / 60) });
+      if (result.length === 3) break;
+    }
+    return result;
+  }
+
+  function formatCounter(min) {
+    if (min >= 60) {
+      const h = Math.floor(min / 60);
+      const m = min % 60;
+      return { showHours: true, hoursText: h + "ч", minsText: String(m).padStart(2, "0") + "м" };
+    }
+    return { showHours: false, hoursText: "", minsText: min + "м" };
+  }
+
+  function render() {
+    const now = getNow();
+    const trains = upcomingTrains(now);
+
+    for (let i = 0; i < 3; i++) {
+      const timeEl = document.getElementById("time-" + i);
+      const hrsEl = document.getElementById("hrs-" + i);
+      const minsEl = document.getElementById("mins-" + i);
+      const train = trains[i];
+
+      if (!train) {
+        timeEl.textContent = "";
+        hrsEl.textContent = "";
+        hrsEl.style.display = "none";
+        minsEl.textContent = "";
+        continue;
+      }
+
+      const { showHours, hoursText, minsText } = formatCounter(train.remainMin);
+      timeEl.textContent = train.t;
+      hrsEl.textContent = hoursText;
+      hrsEl.style.display = showHours ? "inline-block" : "none";
+      minsEl.textContent = minsText;
+    }
+  }
+
+  render();
+  setInterval(render, 1000);
+</script>
+</body>
+</html>
