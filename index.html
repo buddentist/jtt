@@ -267,6 +267,82 @@
 
   render();
   setInterval(render, 1000);
+
+  // ===== Полноэкранный режим (клавиша F) + Wake Lock =====
+  let wakeLockSentinel = null;
+
+  function isFullscreen() {
+    return !!(document.fullscreenElement || document.webkitFullscreenElement);
+  }
+
+  function requestFullscreen() {
+    const el = document.documentElement;
+    const request = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (request) request.call(el).catch(() => {});
+  }
+
+  function exitFullscreen() {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (exit) exit.call(document).catch(() => {});
+  }
+
+  function toggleFullscreen() {
+    if (isFullscreen()) {
+      exitFullscreen();
+    } else {
+      requestFullscreen();
+    }
+  }
+
+  async function requestWakeLock() {
+    if (!navigator.wakeLock) return;
+    try {
+      wakeLockSentinel = await navigator.wakeLock.request("screen");
+    } catch (e) {
+      wakeLockSentinel = null;
+    }
+  }
+
+  function releaseWakeLock() {
+    if (wakeLockSentinel) {
+      wakeLockSentinel.release().catch(() => {});
+      wakeLockSentinel = null;
+    }
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (e.code !== "KeyF") return;
+    // не перехватываем F, если фокус на каком-то интерактивном элементе
+    const tag = document.activeElement && document.activeElement.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tag === "BUTTON" ||
+        (document.activeElement && document.activeElement.isContentEditable)) {
+      return;
+    }
+    toggleFullscreen();
+  });
+
+  document.addEventListener("fullscreenchange", () => {
+    if (isFullscreen()) {
+      requestWakeLock();
+    } else {
+      releaseWakeLock();
+    }
+  });
+  document.addEventListener("webkitfullscreenchange", () => {
+    if (isFullscreen()) {
+      requestWakeLock();
+    } else {
+      releaseWakeLock();
+    }
+  });
+
+  // Wake Lock браузер сам снимает при потере видимости вкладки —
+  // при возврате видимости, если мы всё ещё в fullscreen, запрашиваем заново.
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && isFullscreen()) {
+      requestWakeLock();
+    }
+  });
 </script>
 </body>
 </html>
